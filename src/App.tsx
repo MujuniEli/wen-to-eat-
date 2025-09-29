@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ScheduleSelector from "./components/ScheduleSelector";
 import type { FastingSchedule } from "./components/ScheduleSelector";
+import HourCarousel from "./components/HourCarousel";
 
 export default function App() {
   const [schedule, setSchedule] = useState<FastingSchedule>(null);
@@ -15,6 +16,9 @@ export default function App() {
         <div className="mt-6 text-sm text-gray-700">
           Selected schedule:{" "}
           <span className="font-medium">{schedule ?? "None (pick one)"}</span>
+        </div>
+        <div>
+          <HourCarousel />
         </div>
       </div>
     </div>
