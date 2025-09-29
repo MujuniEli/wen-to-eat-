@@ -205,7 +205,7 @@ export default function HourCarousel() {
             // the middle copy has the "real" index in the middle area; but we don't need to show anything different now
             const key = `${h}-${idx}`;
             // set ref on the first rendered item so we can measure size
-            const setRef = idx === 0 ? (el: HTMLButtonElement | null) => (itemRef.current = el) : undefined;
+            const setRef = idx === 0 ? (el: HTMLButtonElement | null) => { itemRef.current = el; } : undefined;
 
             return (
               <button
