@@ -6,19 +6,44 @@ import HourCarousel from "./components/HourCarousel";
 export default function App() {
   const [schedule, setSchedule] = useState<FastingSchedule>(null);
 
+  // simple counter we bump to tell the carousel to re-center / reset measurements
+  const [resetSignal, setResetSignal] = useState(0);
+
+  const doAppReset = () => {
+    // reset schedule as well to restart the app fresh (you asked the reset to restart the app)
+    setSchedule(null);
+    // bump resetSignal to let carousel reposition
+    setResetSignal((n) => n + 1);
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-      <div className="max-w-xl w-full">
-        <h1 className="text-2xl font-bold mb-4">Please choose a fasting schedule your following</h1>
+    <div className="min-h-screen flex items-start justify-center bg-gray-50 p-6">
+      <div className="max-w-3xl w-full space-y-6">
+        <header>
+          <h1 className="text-2xl font-bold mb-2">When should I have my next meal?</h1>
+          <p className="text-sm text-gray-600">Pick a fasting schedule then tap the hour you last ate.</p>
+        </header>
 
-        <ScheduleSelector value={schedule} onChange={(s) => setSchedule(s)} />
-
-        <div className="mt-6 text-sm text-gray-700">
-          Selected schedule:{" "}
-          <span className="font-medium">{schedule ?? "None (pick one)"}</span>
-        </div>
         <div>
-          <HourCarousel />
+          <ScheduleSelector value={schedule} onChange={(s) => setSchedule(s)} />
+        </div>
+
+        <div>
+          {/* Pass schedule and resetSignal into the carousel */}
+          <HourCarousel schedule={schedule as "16/8" | "20/4" | null} resetSignal={resetSignal} />
+        </div>
+
+        {/* Global app-level reset */}
+        <div className="pt-4 border-t">
+          <button
+            onClick={doAppReset}
+            className="px-4 py-2 rounded-md bg-red-50 text-red-700 border hover:shadow-sm"
+          >
+            Reset App
+          </button>
+          <p className="mt-2 text-xs text-gray-500">
+            Reset clears selections and recenters the carousel. The app also starts fresh on reload.
+          </p>
         </div>
       </div>
     </div>
