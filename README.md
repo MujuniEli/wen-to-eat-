@@ -3,7 +3,7 @@
 **wen-to-eat** is a simple and interactive web app that helps users track their eating windows based on intermittent fasting schedules.  
 It allows users to select a fasting schedule, log the hour they last ate, and get a clear recommendation on when to eat again.
 
-🔗 **Live Demo:** [Coming Soon – Add Your Link Here]()
+🔗 **Live Demo:** [Coming Soon]()
 
 ---
 
