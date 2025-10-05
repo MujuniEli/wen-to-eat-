@@ -1,15 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
-/**
- * HourCarousel
- * - Displays 24 hour cards (0..23) with labels 12AM..11PM
- * - Uses triple-buffer trick (items duplicated 3x) so we can "reset" scroll
- *   to the middle set to create a smooth infinite-scroll illusion.
- *
- * Accessibility:
- * - The container is focusable and supports left/right arrow keys to move.
- * - Each card is rendered as a button for easy focus & activation in the future.
- */
+export type ScheduleId = "16/8" | "20/4" | null;
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -19,165 +10,198 @@ function hourLabel(h: number) {
   return { display: `${hour12}`, ampm };
 }
 
-export default function HourCarousel() {
+/**
+ * Props:
+ * - schedule: which fasting schedule the user chose (null if none)
+ * - resetSignal: integer incremented by parent to force a hard reset (re-center)
+ */
+interface Props {
+  schedule: ScheduleId;
+  resetSignal: number;
+}
+
+export default function HourCarousel({ schedule, resetSignal }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const itemRef = useRef<HTMLButtonElement | null>(null); // to measure width
-  const rafRef = useRef<number | null>(null);
-
-  // used for re-render when widths are measured
-  const [, setMeasured] = useState(0);
-
-  // scroll-reset thresholds (computed after mount)
+  const itemRef = useRef<HTMLButtonElement | null>(null);
   const singleWidthRef = useRef<number>(0);
-  const totalSingleContentWidthRef = useRef<number>(0); // width of 24 items
-  const isUserInteractingRef = useRef(false);
+  const totalSingleWidthRef = useRef<number>(0);
 
-  // helper: duplicate HOURS 3 times
+  // user state
+  const [lastEatenHour, setLastEatenHour] = useState<number | null>(null);
+  const [nextMealHour, setNextMealHour] = useState<number | null>(null);
+
+  // animation / reveal state for the highlighted target card
+  const [isBouncing, setIsBouncing] = useState(false);
+  const bounceTimerRef = useRef<number | null>(null);
+  const [revealedEmojis, setRevealedEmojis] = useState<Record<number, { icons: string[]; positions: { top: number; left: number }[] }>>({});
+
   const tripled = [...HOURS, ...HOURS, ...HOURS];
 
-  // Measure widths and set initial scroll to middle chunk
+  // Measure an item width and center on mount (middle copy)
   useEffect(() => {
     const container = containerRef.current;
     const item = itemRef.current;
     if (!container || !item) return;
 
     const measure = () => {
-      const itemWidth = item.getBoundingClientRect().width;
-      singleWidthRef.current = itemWidth;
-      totalSingleContentWidthRef.current = itemWidth * HOURS.length;
+      const itemW = item.getBoundingClientRect().width + parseFloat(getComputedStyle(item).marginRight || "0");
+      singleWidthRef.current = itemW;
+      totalSingleWidthRef.current = itemW * HOURS.length;
 
-      // Initially jump to middle copy for infinite illusion
-      // scrollLeft should be width of one copy (the first 24 items).
-      // We use setTimeout 0 to allow the browser to apply layout first.
-      container.scrollLeft = totalSingleContentWidthRef.current;
-      setMeasured((n) => n + 1);
+      // center on middle copy
+      container.scrollLeft = totalSingleWidthRef.current;
     };
 
-    // measure now and again after a short delay (handles fonts or layout)
     measure();
     const t = setTimeout(measure, 50);
-
-    // ensure we clean up
     return () => clearTimeout(t);
-  }, []);
+  }, [resetSignal]); // re-measure on reset signal too
 
-  // Smoothly maintain "infinite" illusion: when user scrolls near ends, jump back to mid
-  useEffect(() => {
+  // helper: compute fasting hours from schedule id
+  const fastingHoursFromSchedule = (s: ScheduleId) => {
+    if (s === "16/8") return 16;
+    if (s === "20/4") return 20;
+    return 0;
+  };
+
+  // scroll to a specific hour (0..23) in the middle copy, centering it
+  const scrollToHour = (hour: number, behavior: ScrollBehavior = "smooth") => {
     const container = containerRef.current;
-    if (!container) return;
-
-    let ticking = false;
-
-    const handle = () => {
-      if (!container) return;
-      const single = totalSingleContentWidthRef.current;
-      if (single === 0) return;
-
-      const left = container.scrollLeft;
-
-      // thresholds: if we go too far left (< 0.5 * single) or too far right (> 1.5 * single)
-      // we move scroll by +/- single to re-center on the middle copy.
-      if (left < single * 0.5) {
-        // jumped too far left -> move right by one single copy
-        container.scrollLeft = left + single;
-      } else if (left > single * 1.5) {
-        // jumped too far right -> move left by one single copy
-        container.scrollLeft = left - single;
-      }
-
-      ticking = false;
-    };
-
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      // use rAF to avoid jank
-      rafRef.current = requestAnimationFrame(handle);
-    };
-
-    container.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      container.removeEventListener("scroll", onScroll);
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
-
-  // keyboard support (left/right to move by one item)
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight" || e.key === "Right") {
-        e.preventDefault();
-        scrollByItems(1);
-      } else if (e.key === "ArrowLeft" || e.key === "Left") {
-        e.preventDefault();
-        scrollByItems(-1);
-      }
-    };
-
-    container.addEventListener("keydown", onKeyDown);
-    return () => container.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  // scroll by n items (positive -> right)
-  function scrollByItems(n: number) {
-    const container = containerRef.current;
-    const itemW = singleWidthRef.current || 0;
+    const itemW = singleWidthRef.current;
     if (!container || itemW === 0) return;
-    container.scrollBy({ left: n * itemW, behavior: "smooth" });
-  }
 
-  // make wheel also scroll horizontally (shift+wheel or normal wheel)
-  useEffect(() => {
+    // index in the tripled array that corresponds to the middle copy
+    const index = HOURS.length + hour;
+    // compute left so card at index is centered
+    const left = index * itemW - (container.clientWidth - itemW) / 2;
+    container.scrollTo({ left, behavior });
+  };
+
+  // When user clicks a card to indicate last eaten hour
+  const onCardClick = (hour: number) => {
+    setLastEatenHour(hour);
+
+    // if no schedule chosen, we can't compute next meal — just set nextMealHour null
+    if (!schedule) {
+      setNextMealHour(null);
+      return;
+    }
+
+    const fastingHours = fastingHoursFromSchedule(schedule);
+    const next = (hour + fastingHours) % 24;
+    setNextMealHour(next);
+
+    // scroll to that next hour (center)
+    // small timeout to ensure measurement occurred
+    setTimeout(() => scrollToHour(next, "smooth"), 80);
+
+    // start bounce for 60 seconds (unless user clicks to reveal)
+    startBounceForMinute(next);
+  };
+
+  // Start bounce animation for the target hour for 60 seconds
+  const startBounceForMinute = (hour: number) => {
+    // clear any existing
+    if (bounceTimerRef.current) {
+      window.clearTimeout(bounceTimerRef.current);
+      bounceTimerRef.current = null;
+    }
+    setIsBouncing(true);
+
+    // after 60 secs turn off bouncing automatically
+    bounceTimerRef.current = window.setTimeout(() => {
+      setIsBouncing(false);
+      bounceTimerRef.current = null;
+    }, 60_000);
+  };
+
+  // when user clicks the highlighted next-meal card: reveal emojis and stop bounce
+  const onTargetCardClick = (hour: number) => {
+    // stop bouncing
+    if (bounceTimerRef.current) {
+      window.clearTimeout(bounceTimerRef.current);
+      bounceTimerRef.current = null;
+    }
+    setIsBouncing(false);
+
+    // create random emojis and positions
+    const pool = ["🍗", "🍖", "🍲", "🍫", "🍌", "🍇", "🥗", "🍎", "🍞", "🧀"];
+    const count = 6;
+    const icons: string[] = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)]);
+    const positions = icons.map(() => ({ top: Math.floor(Math.random() * 72) + 8, left: Math.floor(Math.random() * 72) + 8 }));
+
+    setRevealedEmojis((prev) => ({ ...prev, [hour]: { icons, positions } }));
+  };
+
+  // Reset handler (clear selections and recenters to the middle copy)
+  const doReset = () => {
+    // clear state
+    setLastEatenHour(null);
+    setNextMealHour(null);
+    setIsBouncing(false);
+    setRevealedEmojis({});
+    if (bounceTimerRef.current) {
+      window.clearTimeout(bounceTimerRef.current);
+      bounceTimerRef.current = null;
+    }
+
+    // re-center container to middle copy
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || singleWidthRef.current === 0) return;
+    container.scrollTo({ left: totalSingleWidthRef.current, behavior: "smooth" });
+  };
 
-    const onWheel = (e: WheelEvent) => {
-      // if vertical wheel, convert to horizontal
-      if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
-        // prefer horizontal scrolling for the carousel
-        e.preventDefault();
-        container.scrollLeft += e.deltaY;
+  // If schedule becomes null (user deselects), clear next meal state
+  useEffect(() => {
+    if (!schedule) {
+      setNextMealHour(null);
+      setLastEatenHour(null);
+      setIsBouncing(false);
+      setRevealedEmojis({});
+      if (bounceTimerRef.current) {
+        window.clearTimeout(bounceTimerRef.current);
+        bounceTimerRef.current = null;
       }
-    };
+    }
+  }, [schedule]);
 
-    container.addEventListener("wheel", onWheel, { passive: false });
-    return () => container.removeEventListener("wheel", onWheel);
-  }, []);
-
-  // mark when user is interacting (to disable auto behaviors in later steps)
+  // Also recenter when parent sends a resetSignal prop (App will bump that on Reset)
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
-    const onPointerDown = () => (isUserInteractingRef.current = true);
-    const onPointerUp = () => (isUserInteractingRef.current = false);
-
-    container.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointerup", onPointerUp);
-
-    return () => {
-      container.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-  }, []);
+    if (!container || singleWidthRef.current === 0) return;
+    container.scrollTo({ left: totalSingleWidthRef.current, behavior: "smooth" });
+  }, [resetSignal]);
 
   return (
     <div className="w-full">
+      {/* Instruction text above the carousel */}
+      <p className="mb-3 text-sm text-gray-700">
+        Select the hour in which you <strong>last</strong> ate and we will show you when you should be
+        eating again based on your fasting schedule.
+      </p>
+
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-semibold">24-hour Carousel</h2>
 
         <div className="flex gap-2">
           <button
-            onClick={() => scrollByItems(-1)}
+            onClick={() => {
+              // move left by one hour
+              const container = containerRef.current;
+              if (!container) return;
+              container.scrollBy({ left: -(singleWidthRef.current || 0), behavior: "smooth" });
+            }}
             aria-label="Scroll left"
             className="px-3 py-1 rounded-md border bg-white hover:shadow-sm"
           >
             ←
           </button>
           <button
-            onClick={() => scrollByItems(1)}
+            onClick={() => {
+              const container = containerRef.current;
+              if (!container) return;
+              container.scrollBy({ left: singleWidthRef.current || 0, behavior: "smooth" });
+            }}
             aria-label="Scroll right"
             className="px-3 py-1 rounded-md border bg-white hover:shadow-sm"
           >
@@ -186,26 +210,31 @@ export default function HourCarousel() {
         </div>
       </div>
 
-      {/* Scroll container */}
       <div
         ref={containerRef}
         role="list"
         tabIndex={0}
         aria-label="Hours carousel. Use left and right arrow keys to navigate."
         className="relative w-full overflow-x-auto scroll-smooth touch-pan-x no-scrollbar"
-        // tailwind: hide default scrollbar via custom class (no-scrollbar). Add this class in your CSS if you want:
-        // .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        style={{
-          WebkitOverflowScrolling: "touch",
-        }}
+        style={{ WebkitOverflowScrolling: "touch" }}
       >
         <div className="flex gap-3 items-stretch px-3 py-4">
           {tripled.map((h, idx) => {
             const { display, ampm } = hourLabel(h);
-            // the middle copy has the "real" index in the middle area; but we don't need to show anything different now
             const key = `${h}-${idx}`;
-            // set ref on the first rendered item so we can measure size
-            const setRef = idx === 0 ? (el: HTMLButtonElement | null) => { itemRef.current = el; } : undefined;
+            const isTarget = nextMealHour === h && idx >= HOURS.length && idx < HOURS.length * 2; // target appears in middle copy
+            const isTargetIndex = nextMealHour === h && idx === HOURS.length + h;
+            const isSelectedAsLast = lastEatenHour === h && idx >= HOURS.length && idx < HOURS.length * 2;
+
+            // on the very first rendered item we attach itemRef for measurement
+            const setRef = idx === 0 ? (el: HTMLButtonElement | null) => (itemRef.current = el) : undefined;
+
+            // if this is the exact middle-copy target, add green border & bounce when active
+            const borderClass = isTarget ? "border-green-500" : "border-gray-200";
+            const bounceClass = isTarget && isBouncing ? "animate-bounce" : "";
+
+            // show emojis if this hour has reveal data
+            const reveal = revealedEmojis[h];
 
             return (
               <button
@@ -213,21 +242,75 @@ export default function HourCarousel() {
                 aria-label={`${display} ${ampm}`}
                 ref={setRef}
                 key={key}
-                className="min-w-[84px] sm:min-w-[100px] lg:min-w-[120px] h-28 flex-shrink-0 rounded-xl bg-white border shadow-sm flex flex-col items-center justify-center p-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                // we intentionally keep these simple; later we can add active/highlight states
+                onClick={() => {
+                  // if this is the target card (next meal), reveal emojis and stop bounce
+                  if (nextMealHour === h && idx === HOURS.length + h) {
+                    onTargetCardClick(h);
+                    return;
+                  }
+
+                  // otherwise interpret as selecting the last eaten hour
+                  onCardClick(h);
+                }}
+                className={`relative min-w-[84px] sm:min-w-[100px] lg:min-w-[120px] h-28 flex-shrink-0 rounded-xl bg-white border ${borderClass} shadow-sm flex flex-col items-center justify-center p-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 ${bounceClass}`}
               >
                 <div className="text-2xl font-bold leading-none">{display}</div>
                 <div className="text-sm text-gray-500">{ampm}</div>
+
+                {/* small badge for "you selected this as last eaten" (in middle copy) */}
+                {isSelectedAsLast && (
+                  <div className="absolute top-2 right-2 text-xs px-2 py-0.5 bg-indigo-600 text-white rounded-full">Last</div>
+                )}
+
+                {/* Emoji reveal: randomly positioned icons inside the card */}
+                {reveal && (
+                  <div className="pointer-events-none absolute inset-0">
+                    {reveal.icons.map((ic, i) => (
+                      <span
+                        key={i}
+                        style={{
+                          position: "absolute",
+                          top: `${reveal.positions[i].top}%`,
+                          left: `${reveal.positions[i].left}%`,
+                          transform: "translate(-50%,-50%)",
+                          fontSize: "18px",
+                        }}
+                        aria-hidden
+                      >
+                        {ic}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </button>
             );
           })}
         </div>
       </div>
 
-      <p className="mt-3 text-xs text-gray-500">
-        Scroll horizontally, drag on touch, or use the ← → buttons / arrow keys. Infinite scroll is
-        implemented by duplicating the 24 items and re-centering when you reach the ends.
-      </p>
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={doReset}
+          className="px-4 py-2 rounded-md bg-white border hover:shadow-sm"
+          aria-label="Reset app"
+        >
+          Reset
+        </button>
+
+        {/* Small status text */}
+        <div className="text-sm text-gray-600">
+          {lastEatenHour === null ? (
+            <>No hour selected yet.</>
+          ) : nextMealHour === null ? (
+            <>Pick a fasting schedule to compute next meal.</>
+          ) : (
+            <>
+              Last ate at <span className="font-medium">{`${lastEatenHour % 12 === 0 ? 12 : lastEatenHour % 12}${lastEatenHour < 12 ? "AM" : "PM"}`}</span>.
+              Next meal at <span className="font-medium text-green-600">{`${nextMealHour % 12 === 0 ? 12 : nextMealHour % 12}${nextMealHour < 12 ? "AM" : "PM"}`}</span>.
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
