@@ -125,8 +125,8 @@ export default function HourCarousel({ schedule, resetSignal }: Props) {
     setIsBouncing(false);
 
     // create random emojis and positions
-    const pool = ["🍗", "🍖", "🍲", "🍫", "🍌", "🍇", "🥗", "🍎", "🍞", "🧀"];
-    const count = 6;
+    const pool = ["🍗", "🍖", "🍫", "🍌", "🍇", "🥗", "🍎"];
+    const count = 3 + Math.floor(Math.random() * 3); // 3 to 5
     const icons: string[] = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)]);
     const positions = icons.map(() => ({ top: Math.floor(Math.random() * 72) + 8, left: Math.floor(Math.random() * 72) + 8 }));
 
