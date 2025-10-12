@@ -17,7 +17,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex items-start justify-center bg-gray-50 p-6">
+    <div className="min-h-screen flex items-start justify-center bg-[#FCF8EF] p-6">
       <div className="max-w-3xl w-full space-y-6">
         <header>
           <h1 className="text-2xl font-bold mb-2">When should I have my next meal?</h1>
