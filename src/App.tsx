@@ -30,7 +30,7 @@ export default function App() {
 
         <div>
           {/* Pass schedule and resetSignal into the carousel */}
-          <HourCarousel schedule={schedule as "16/8" | "20/4" | null} resetSignal={resetSignal} />
+          <HourCarousel schedule={schedule} resetSignal={resetSignal} />
         </div>
 
         {/* Global app-level reset */}
