@@ -363,7 +363,7 @@ export default function HourCarousel({ schedule, resetSignal }: Props) {
       </p>
 
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-lg font-semibold text-primary">24-hour Carousel</h3>
+        
         <div className="flex gap-2">
           <button
             aria-label="scroll left"
